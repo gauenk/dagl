@@ -13,7 +13,7 @@ python -m pip install -e ./lib --user
 ```
 
 ## Citation
-If you find our work helpful in your resarch or work, please cite the following paper.
+If you find their work helpful in your resarch or work, please cite the following paper.
 ```
 @inproceedings{mou2021gatir,
   title={Dynamic Attentive Graph Learning for Image Restoration},
