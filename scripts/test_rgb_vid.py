@@ -32,6 +32,9 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 
 def run_exp(cfg):
 
+    # -- create timer --
+    timer = dagl.utils.timer.ExpTimer()
+
     # -- data --
     data,loaders = data_hub.sets.load(cfg)
     index = data.te.groups.index(cfg.vid_name)
@@ -39,6 +42,15 @@ def run_exp(cfg):
 
     # -- unpack --
     noisy,clean = sample['noisy'],sample['clean']
+
+    # -- select color channel --
+    if cfg.color == "bw":
+        noisy = noisy[:,[0]].contiguous()
+        clean = clean[:,[0]].contiguous()
+    else:
+        assert cfg.color == "rgb","must be rgb if not bw for now."
+
+    # -- onto cuda --
     noisy,clean = noisy.to(cfg.device),clean.to(cfg.device)
 
     # -- normalize images --
@@ -47,7 +59,7 @@ def run_exp(cfg):
     clean /= 255.
 
     # -- network --
-    model = bipnet.load_deno_network().to(cfg.device)
+    model = dagl.load_bw_deno_network(cfg.sigma).to(cfg.device)
     model.eval()
 
     # -- size --
@@ -56,14 +68,17 @@ def run_exp(cfg):
     batch_size = ngroups*1024
 
     # -- optical flow --
-    noisy_np = noisy.cpu().numpy()
+    timer.start("flow")
     if cfg.comp_flow == "true":
+        noisy_np = noisy.cpu().numpy()
         flows = svnlb.compute_flow(noisy_np,cfg.sigma)
         flows = edict({k:v.to(device) for k,v in flows.items()})
     else:
         flows = None
+    timer.stop("flow")
 
     # -- internal adaptation --
+    timer.start("adapt")
     run_internal_adapt = cfg.internal_adapt_nsteps > 0
     run_internal_adapt = run_internal_adapt and (cfg.internal_adapt_nepochs > 0)
     if run_internal_adapt:
@@ -71,34 +86,39 @@ def run_exp(cfg):
                                  ws=cfg.ws,wt=cfg.wt,batch_size=batch_size,
                                  nsteps=cfg.internal_adapt_nsteps,
                                  nepochs=cfg.internal_adapt_nepochs)
+    timer.stop("adapt")
+
     # -- denoise --
+    timer.start("deno")
     with th.no_grad():
-        noisy_b = noisy[None,:]
-        noise_est = th.ones_like(noisy_b)*sigma
-        deno = model(noisy_b,noise_est)
+        deno = model(noisy,0,ensemble=True)
         deno = deno.clamp(0.0, 1.0)
+        deno = deno.detach()
         #flows=flows,ws=cfg.ws,wt=cfg.wt,batch_size=batch_size)
+    timer.stop("deno")
 
     # -- save example --
+    print("deno.shape: ",deno.shape)
     out_dir = Path(cfg.saved_dir) / str(cfg.uuid)
-    deno_fns = bipnet.utils.io.save_burst(deno,out_dir,"deno")
+    deno_fns = dagl.utils.io.save_burst(deno,out_dir,"deno")
 
     # -- psnr --
     t = clean.shape[0]
     deno = deno.detach()
-    print(clean[0,0,:3,:3])
-    print(deno[0,0,:3,:3])
     clean = clean.reshape((t,-1))
-    deno = deno.reshape((1,-1))
+    deno = deno.reshape((t,-1))
     mse = th.mean((clean - deno)**2,1)
     psnrs = -10. * th.log10(mse).detach()
     psnrs = list(psnrs.cpu().numpy())
+    print(psnrs)
 
     # -- init results --
     results = edict()
     results.psnrs = psnrs
     results.deno_fn = deno_fns
     results.vid_name = [cfg.vid_name]
+    for name,time in timer.items():
+        results[name] = time
 
     return results
 
@@ -108,12 +128,13 @@ def default_cfg():
     cfg = edict()
     cfg.nframes_tr = 5
     cfg.nframes_val = 5
-    cfg.nframes_te = 8
+    cfg.nframes_te = 0
     cfg.saved_dir = "./output/saved_results/"
-    cfg.checkpoint_dir = "/home/gauenk/Documents/packages/bipnet/output/checkpoints/"
+    cfg.checkpoint_dir = "/home/gauenk/Documents/packages/dagl/output/checkpoints/"
     cfg.isize = None
     cfg.num_workers = 4
     cfg.device = "cuda:0"
+    cfg.color = "bw"
     return cfg
 
 def main():
@@ -130,12 +151,12 @@ def main():
     cache.clear()
 
     # -- get mesh --
-    dnames = ["toy"]
-    vid_names = ["text_tourbus"]
-    # dnames = ["set8"]
-    # vid_names = ["snowboard","sunflower","tractor","hypersmooth",
-    #              "motorbike","park_joy","rafting","touchdown"]
-    sigmas = [50,30,10]
+    # dnames = ["toy"]
+    # vid_names = ["text_tourbus"]
+    dnames = ["set8"]
+    vid_names = ["snowboard","sunflower","tractor","hypersmooth",
+                 "motorbike","park_joy","rafting","touchdown"]
+    sigmas = [25]#[50,25,10]
     internal_adapt_nsteps = [0]
     internal_adapt_nepochs = [5]
     ws,wt = [29],[0]
