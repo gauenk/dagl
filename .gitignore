@@ -1,8 +1,12 @@
+.cache_io
+output
 build/*
 cmake/*
 data/*
 output/*
+weights/*
 lib/*egg-info/
+CAR
 .cache_io/*
 *.py[co]
 *__pycache__/
