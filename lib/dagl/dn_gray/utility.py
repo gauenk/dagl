@@ -44,7 +44,8 @@ class checkpoint():
         now = datetime.datetime.now().strftime('%Y-%m-%d-%H:%M:%S')
 
         if args.load == '.':
-            if args.save == '.': args.save = now
+            if args.save: args.save = now
+            if isinstance(args.save,bool): args.save = "test"
             self.dir = '../experiment/' + args.save
         else:
             self.dir = '../experiment/' + args.load

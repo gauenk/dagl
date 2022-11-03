@@ -41,7 +41,10 @@ def save_image(image,path):
         image = image*255.
     image = np.clip(image,0,255).astype(np.uint8)
 
-    # -- save --
+    # -- remove single color --
     image = rearrange(image,'c h w -> h w c')
+    image = image.squeeze()
+
+    # -- save --
     img = Image.fromarray(image)
     img.save(path)

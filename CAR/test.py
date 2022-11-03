@@ -11,7 +11,10 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 from utils import *
-import model as my_model
+try:
+    import .model as my_model
+except:
+    import model as my_model
 import time
 import torchvision.utils as vutils
 torch.manual_seed(args.seed)

@@ -1,5 +1,9 @@
 import argparse
-import template
+try:
+    import template
+except:
+    from . import template
+
 
 parser = argparse.ArgumentParser(description='EDSR and MDSR')
 
@@ -128,7 +132,8 @@ parser.add_argument('--skip_threshold', type=float, default='1e6',
 # Log specifications
 parser.add_argument('--save_path',type=str,default='')
 parser.add_argument('--save_inter',type=int,default=50)
-parser.add_argument('--save', type=str, default='test',
+parser.add_argument('--save', action='store_true')
+parser.add_argument('--save_suf', type=str, default='test',
                     help='file name to save')
 parser.add_argument('--load', type=str, default='.',
                     help='file name to load')

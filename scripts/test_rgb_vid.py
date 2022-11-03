@@ -91,7 +91,7 @@ def run_exp(cfg):
     # -- denoise --
     timer.start("deno")
     with th.no_grad():
-        deno = model(noisy,0,ensemble=True)
+        deno = model(noisy,0,ensemble=False)
         deno = deno.clamp(0.0, 1.0)
         deno = deno.detach()
         #flows=flows,ws=cfg.ws,wt=cfg.wt,batch_size=batch_size)
@@ -122,6 +122,26 @@ def run_exp(cfg):
 
     return results
 
+def compute_ssim(clean,deno,div=255.):
+    nframes = clean.shape[0]
+    ssims = []
+    for t in range(nframes):
+        clean_t = clean[t].cpu().numpy().squeeze().transpose((1,2,0))/div
+        deno_t = deno[t].cpu().numpy().squeeze().transpose((1,2,0))/div
+        ssim_t = compute_ssim_ski(clean_t,deno_t,channel_axis=-1)
+        ssims.append(ssim_t)
+    ssims = np.array(ssims)
+    return ssims
+
+def compute_psnr(clean,deno,div=255.):
+    t = clean.shape[0]
+    deno = deno.detach()
+    clean_rs = clean.reshape((t,-1))/div
+    deno_rs = deno.reshape((t,-1))/div
+    mse = th.mean((clean_rs - deno_rs)**2,1)
+    psnrs = -10. * th.log10(mse).detach()
+    psnrs = psnrs.cpu().numpy()
+    return psnrs
 
 def default_cfg():
     # -- config --

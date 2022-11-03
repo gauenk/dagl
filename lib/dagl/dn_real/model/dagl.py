@@ -1,9 +1,11 @@
-import model.common as common
 import torch.nn as nn
 import torch
 import math
 import torch.nn.functional as F
 import time
+# import model.common
+from . import common
+
 
 def make_model(args, parent=False):
     return RR(args)

@@ -1,4 +1,9 @@
-import model.common as common
+try:
+    import model.common as common
+except:
+    from . import common
+
+
 import torch.nn as nn
 import torch
 import math
@@ -241,7 +246,7 @@ class CE(nn.Module):
         y = []
         w, h = raw_int_bs[2], raw_int_bs[3]
         _, paddings = same_padding(b3[0,0].unsqueeze(0).unsqueeze(0), [self.ksize, self.ksize], [self.stride_2, self.stride_2], [1, 1])
-        
+
         for xi, wi,pi,thr,bias in zip(patch_112_group_2, patch_28_group, patch_112_group,soft_thr,soft_bias):
             c_s = pi.shape[2]
             k_s = wi[0].shape[2]
@@ -252,14 +257,14 @@ class CE(nn.Module):
                                        math.ceil(h / self.stride_2))
             b_s, l_s, h_s, w_s = score_map.shape
             yi = score_map.view(l_s, -1)
-            
+
             mask = F.relu(yi-yi.mean(dim=1,keepdim=True)*thr.unsqueeze(1)+bias.unsqueeze(1))
             mask_b = (mask!=0.).float()
 
             yi = yi * mask
             yi = F.softmax(yi * self.softmax_scale, dim=1)
             yi = yi * mask_b
-            
+
             pi = pi.view(h_s * w_s, -1)
             yi = torch.mm(yi, pi)
             yi = yi.view(b_s, l_s, c_s, k_s, k_s)[0]

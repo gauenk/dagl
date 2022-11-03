@@ -4,6 +4,13 @@ import torch
 import torch.nn as nn
 import numpy as np
 import random
+from pathlib import Path
+
+def optional(pydict,field,default):
+    if pydict is None: return default
+    if hasattr(pydict,field): return getattr(pydict,field)
+    else: return default
+
 
 def test_pad(model, L, modulo=16):
     h, w = L.size()[-2:]
@@ -89,8 +96,15 @@ class Model(nn.Module):
 
         self.save_models = args.save_models
 
-        module = import_module('model.' + args.model.lower())
-        self.model = module.make_model(args)
+        if args.model.lower() != "dagl":
+            raise ValueError(f"Uknown model [{args.model}]")
+        # module = import_module('model.' + args.model.lower())
+        try:
+            module = import_module('model.' + args.model.lower())
+            self.model = module.make_model(args)
+        except:
+            module = import_module('dagl.dn_gray.model.' + args.model.lower())
+            self.model = module.make_model(args)
 
         if not args.cpu:
             torch.cuda.manual_seed(args.seed)
@@ -102,13 +116,39 @@ class Model(nn.Module):
                 gpu_list = range(0, args.n_GPUs)
                 self.model = nn.DataParallel(self.model, gpu_list)
 
+        if isinstance(ckp,str):
+            ckp = Path(ckp)
+        if isinstance(ckp,Path):
+            cdir = str(ckp.parents[0])
+        else:
+            cdir = ckp.dir
         self.load(
-            ckp.dir,
+            cdir,
             pre_train=args.pre_train,
             resume=args.resume,
             cpu=args.cpu
         )
-        if args.print_model:
+
+        # print(args.n_colors)
+        # print(args.res_scale)
+        # print(args.rgb_range)
+        # print("resblock: ",args.n_resblocks)
+        # print(args.n_feats)
+        # print("scale: ",args.scale)
+        # print(args.self_ensemble)
+        # print(args.chop)
+        # print("prec:" ,args.precision)
+        # print(args.cpu)
+        # print(args.n_GPUs)
+        # print("pre_trian: ",args.pre_train)
+        # print(args.save_models)
+        # print(args.model)
+        # print("resume: ",args.resume)
+        # print(args.cpu)
+        # print(args.seed)
+
+        print_model = optional(args,'print_model',False)
+        if print_model:
             print(self.model)
 
     def forward(self, x, idx_scale,ensemble=False):
@@ -152,6 +192,7 @@ class Model(nn.Module):
         else:
             kwargs = {}
 
+        print(apath)
         if resume == -1:
             self.get_model().load_state_dict(
                 torch.load(

@@ -1,3 +1,9 @@
+
+#-- misc part 1 --
+import math
+import torch as th
+import matplotlib
+matplotlib.use("agg")
 import numpy as np
 import scipy.io as sio
 import os
@@ -7,16 +13,28 @@ import argparse
 import cv2
 from torch.autograd import Variable
 import matplotlib.pyplot as plt
-from model.gatir import RR
-from option import args
+
+#-- local imports --
+try:
+    from .model.dagl import RR
+    from .option import args
+except:
+    from model.dagl import RR
+    from option import args
+
+
+#-- misc part 2 --
 import glob
 import tqdm
 import torchvision.utils as vutils
 import torchvision.transforms as transforms
 from PIL import Image
 
+weights_path = "/home/gauenk/Documents/packages/dagl/weights/checkpoints/"
+weights_path += "DN_Real/rn/model/model_best.pt"
+
 parse = argparse.ArgumentParser('DND')
-parse.add_argument('--logdir',type=str,default='checkpoints/rn/model/model_best.pt')
+parse.add_argument('--logdir',type=str,default=weights_path)
 parse.add_argument('--data_path',type=str,default='testsets/patches_DND')
 parse.add_argument('--save_path',type=str,default='save/res_dagl')
 opt = parse.parse_args()
@@ -76,6 +94,7 @@ def test_x8(model, L):
     output_cat = torch.stack(E_list, dim=0)
     E = output_cat.mean(dim=0, keepdim=False)
     return E
+
 def forward_chop(x, nn_model, n_GPUs= 1, shave=10, min_size=10000,flg=1):
     scale = 1
     n_GPUs = min(n_GPUs, 4)
@@ -122,7 +141,7 @@ def forward_chop(x, nn_model, n_GPUs= 1, shave=10, min_size=10000,flg=1):
     h_size, w_size = scale * h_size, scale * w_size
     shave *= scale
 
-    output = Variable(x.data.new(b, c, h, w), volatile=True)
+    output = Variable(x.data.new(b, c, h, w))
     output[:, :, 0:h_half, 0:w_half] \
         = sr_list[0][:, :, 0:h_half, 0:w_half]
     output[:, :, 0:h_half, w_half:w] \
@@ -162,5 +181,12 @@ if __name__ == '__main__':
         Img = cv2.cvtColor(cv2.imread(im_path),cv2.COLOR_BGR2RGB)
         Img = transforms.ToTensor()(Image.fromarray(Img)).cuda().unsqueeze(0)
         Out = my_denoiser.denoise(Img=Img,flg=0)
+        out = Out
+        print(Img.min(),Img.max())
+        print(out.min(),out.max())
+        out = out.clamp(0,1)
+        mse = th.mean((Img - Out)**2).item()
+        psnr = -10 * math.log10(mse)
+        print(psnr)
         vutils.save_image(Out, os.path.join(opt.save_path , str(count)+'.png'), padding=0, normalize=False)
         count += 1
