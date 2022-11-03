@@ -195,7 +195,6 @@ class Model(nn.Module):
         else:
             kwargs = {}
 
-        print(apath)
         if resume == -1:
             self.get_model().load_state_dict(
                 torch.load(
