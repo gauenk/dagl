@@ -1,56 +1,37 @@
-# -- api --
-from . import dn_gray
-from . import dn_real
+
+# -- code api --
+from . import augmented
+from . import original
+from . import configs
+from . import lightning
+from . import flow
 from . import utils
+from .utils import select_sigma
+from .utils import optional
 
+# -- publication api --
+from . import cvpr23
 
-# -- function imports --
-import os
-import numpy as np
-import torch as th
-from pathlib import Path
-from easydict import EasyDict as edict
+# -- model api --
+# from .original import extract_model_config as extract_model_config_orig
+# from .augmented import extract_model_config as extract_model_config_aug
+# from .augmented import extract_io_config,extract_search_config
+# from .augmented import extract_arch_config,extract_model_config
 
-def select_sigma(sigma):
-    sigmas = np.array([15, 25, 50])
-    msigma = np.argmin((sigmas - sigma)**2)
-    return sigmas[msigma]
+def load_model(cfg):
+    mtype = optional(cfg,'model_type','augmented')
+    if mtype == "augmented":
+        return augmented.load_model(cfg)
+    elif mtype == "original":
+        return original.load_model(cfg)
+    else:
+        raise ValueError(f"Uknown model type [{mtype}]")
 
-def load_bw_deno_network(data_sigma):
-
-    # -- params --
-    model_sigma = select_sigma(data_sigma)
-    args = dn_gray.default_options()
-    args.ensemble = False
-    checkpoint = edict()
-    checkpoint.dir = "."
-
-    # -- weights --
-    weights = "/home/gauenk/Documents/packages/dagl/weights/checkpoints/"
-    weights += ("DN_Gray/%d/model/model_best.pt" % model_sigma)
-    weights = Path(weights)
-
-    # -- model --
-    model = dn_gray.DAGL_model(args,checkpoint)
-    model.model.load_state_dict(th.load(weights,map_location='cuda'))
-    return model
-
-def load_real_deno_network():
-    # model_sigma = select_sigma(data_sigma)
-    weights = "/home/gauenk/Documents/packages/dagl/weights/checkpoints/"
-    weights += "DN_Real/rn/model/model_best.pt"
-    args = dn_real.get_options()
-    model = dn_real.DAGL(args)
-    model.load_state_dict(th.load(weights, map_location = 'cuda'))
-    return model
-
-def run_bw(model,image):
-    with th.no_grad():
-        deno = model(image)
-    return deno
-
-def run_real(model,image):
-    with th.no_grad():
-        deno = th.clamp(dn_real.forward_chop(x=image, nn_model=model,flg=0), 0., 1.)
-    return deno
-
+def extract_model_config(cfg):
+    mtype = optional(cfg,'model_type','augmented')
+    if mtype == "augmented":
+        return augmented.extract_model_config(cfg)
+    elif mtype == "original":
+        return original.extract_model_config(cfg)
+    else:
+        raise ValueError(f"Uknown model type [{mtype}]")
