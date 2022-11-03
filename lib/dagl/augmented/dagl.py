@@ -17,6 +17,7 @@ class RR(nn.Module):
         n_resblocks = args.n_resblocks
         n_feats = args.n_feats
         kernel_size = 3
+        self.n_resblocks = n_resblocks
 
         rgb_mean = (0.4488, 0.4371, 0.4040)
         rgb_std = (1.0, 1.0, 1.0)
@@ -47,13 +48,13 @@ class RR(nn.Module):
         self.body = nn.Sequential(*m_body)
         self.tail = nn.Sequential(*m_tail)
 
-    def forward(self, x):
+    def forward(self, x, flows=None):
         res = self.head(x)
-
-        res = self.body(res)
-
+        mid = self.n_resblocks//2
+        for _name,layer in self.body.named_children():
+            if int(_name) == mid: res = layer(res,flows)
+            else: res = layer(res)
         res = self.tail(res)
-
         return x+res
 
     def load_state_dict(self, state_dict, strict=True):
@@ -113,7 +114,7 @@ class CES(nn.Module):
         self.c3_4 = CE(in_channels=in_channels,search_cfg=search_cfg_l[11])
         self.c3_c = nn.Conv2d(in_channels,in_channels,1,1,0)
 
-    def forward(self, x):
+    def forward(self, x, flows=None):
         # 4head-3stages
         nstages = 3
         nheads = 4

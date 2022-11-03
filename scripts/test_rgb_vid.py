@@ -24,12 +24,12 @@ import cache_io
 
 # -- network --
 import dagl
-import dagl.configs as configs
+import dagl.configs.test_rgb_vid as configs
 from dagl import lightning
 from dagl.utils.misc import optional
 import dagl.utils.gpu_mem as gpu_mem
 from dagl.utils.misc import rslice,write_pickle,read_pickle
-from dagl.utils.proc_utils import spatial_chop,temporal_chop
+from dagl.utils.proc_utils import get_fwd_fxn
 
 def run_exp(cfg):
 
@@ -44,12 +44,10 @@ def run_exp(cfg):
     results.psnrs = []
     results.ssims = []
     results.noisy_psnrs = []
-    results.adapt_psnrs = []
     results.deno_fns = []
     results.vid_frames = []
     results.vid_name = []
     results.timer_flow = []
-    results.timer_adapt = []
     results.timer_deno = []
     results.mem_res = []
     results.mem_alloc = []
@@ -61,7 +59,7 @@ def run_exp(cfg):
     imax = 255.
 
     # -- optional load trained weights --
-    load_trained_state(model,cfg.sigma,cfg.use_train)
+    # load_trained_state(model,cfg.sigma,cfg.use_train)
 
     # -- data --
     data,loaders = data_hub.sets.load(cfg)
@@ -113,23 +111,6 @@ def run_exp(cfg):
             flows = flow.run_zeros(noisy[None,:])
         timer.stop("flow")
 
-        # -- internal adaptation --
-        timer.start("adapt")
-        run_internal_adapt = cfg.internal_adapt_nsteps > 0
-        run_internal_adapt = run_internal_adapt and (cfg.internal_adapt_nepochs > 0)
-        adapt_psnrs = [0.]
-        if run_internal_adapt:
-            adapt_psnrs = model.run_internal_adapt(
-                noisy,cfg.sigma,flows=flows,
-                ws=cfg.ws,wt=cfg.wt,batch_size=batch_size,
-                nsteps=cfg.internal_adapt_nsteps,
-                nepochs=cfg.internal_adapt_nepochs,
-                sample_mtype=cfg.adapt_mtype,
-                clean_gt = clean,
-                region_gt = None
-            )
-        timer.stop("adapt")
-
         # -- denoise --
         fwd_fxn = get_fwd_fxn(cfg,model)
         # tsize = 10
@@ -159,7 +140,6 @@ def run_exp(cfg):
         results.psnrs.append(psnrs)
         results.ssims.append(ssims)
         results.noisy_psnrs.append(noisy_psnrs)
-        results.adapt_psnrs.append(adapt_psnrs)
         results.deno_fns.append(deno_fns)
         results.vid_frames.append(vid_frames)
         results.vid_name.append([cfg.vid_name])
@@ -179,27 +159,23 @@ def main():
 
     # -- get cache --
     cache_dir = ".cache_io"
-    # cache_name = "test_rgb_net" # current!
-    cache_name = "test_rgb_net_rebuttle_testing" # current!
-    # cache_name = "test_rgb_net_rebuttle_s50" # current!
-    # cache_name = "test_rgb_net_rebuttle_s50_te" # current!
-    # cache_name = "test_rgb_net_rebuttle_s25" # current!
-    # cache_name = "test_rgb_net_rebuttle_s25_te" # current!
+    cache_name = "baseline" # current!
     cache = cache_io.ExpCache(cache_dir,cache_name)
     # cache.clear()
 
     # -- get defaults --
-    cfg = configs.default_test_vid_cfg()
+    cfg = configs.default()
     cfg.seed = 123
-    cfg.bw = True
+
+    # -- data chop --
     cfg.nframes = 6
-    cfg.isize = "none"
-    # cfg.isize = "512_512"
     cfg.isize = "256_256"
     cfg.cropmode = "center"
     cfg.frame_start = 0
     cfg.frame_end = cfg.frame_start+cfg.nframes-1
     cfg.frame_end = 0 if cfg.frame_end < 0 else cfg.frame_end
+
+    # -- processing --
     cfg.spatial_crop_size = "none"
     cfg.spatial_crop_overlap = 0.#0.1
     cfg.temporal_crop_size = cfg.nframes
@@ -207,8 +183,6 @@ def main():
     cfg.ps = 10
 
     # -- get mesh --
-    internal_adapt_nsteps = [300]
-    internal_adapt_nepochs = [0]
     k,bs,stride = [7],[28*1024],[5]
     # ws,wt,k,bs,stride = [20],[0],[7],[28*1024],[5]
     # ws,wt,k,bs,stride = [29],[3],[7],[28*1024],[5]
@@ -233,12 +207,9 @@ def main():
     #              "hypersmooth","park_joy","rafting","touchdown"]
     flow = ["true"]
     # flow = ["true","false"]
-    model_names,adapt_mtypes = ["refactored"],["rand"]
+    model_names = ["refactored"]
     exp_lists = {"dname":dnames,"vid_name":vid_names,"sigma":sigmas,
-                 "internal_adapt_nsteps":internal_adapt_nsteps,
-                 "internal_adapt_nepochs":internal_adapt_nepochs,
-                 "flow":flow,"ws":ws,"wt":wt,"adapt_mtype":adapt_mtypes,
-                 "use_train":use_train,"stride":stride,
+                 "flow":flow,"ws":ws,"wt":wt,"use_train":use_train,"stride":stride,
                  "ws":ws,"wt":wt,"k":k, "bs":bs, "model_name":model_names}
     exps_a = cache_io.mesh_pydicts(exp_lists) # create mesh
     # exp_lists['wt'] = [3]
@@ -251,9 +222,6 @@ def main():
 
 
     # -- original w/out training --
-    # exp_lists['ws'] = [-1]
-    # exp_lists['wt'] = [-1]
-    # exp_lists['bs'] = [-1]
     exp_lists['model_name'] = ["original"]
     exp_lists['flow'] = ["false"]
     exp_lists['use_train'] = ["false"]#,"true"]
@@ -261,7 +229,7 @@ def main():
     cache_io.append_configs(exps_b,cfg) # merge the two
 
     # -- cat exps --
-    exps = exps_a# + exps_b
+    exps = exps_a + exps_b
     # exps = exps_b
 
     # -- run exps --

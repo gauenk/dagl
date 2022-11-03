@@ -20,6 +20,7 @@ class RR(nn.Module):
         n_resblocks = args.n_resblocks
         n_feats = args.n_feats
         kernel_size = 3
+        self.n_resblocks = n_resblocks
 
         rgb_mean = (0.4488, 0.4371, 0.4040)
         rgb_std = (1.0, 1.0, 1.0)
@@ -49,7 +50,7 @@ class RR(nn.Module):
         self.body = nn.Sequential(*m_body)
         self.tail = nn.Sequential(*m_tail)
 
-    def forward(self, x):
+    def forward(self, x, flows=None):
         res = self.head(x)
 
         res = self.body(res)
