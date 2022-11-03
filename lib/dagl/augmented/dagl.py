@@ -123,7 +123,7 @@ class CES(nn.Module):
             stage_out,stage_inds = [],[]
             inds_prev = None
             for head in range(nheads):
-                cstr = "c%d_%d" % (stage+1,nheads+1)
+                cstr = "c%d_%d" % (stage+1,head+1)
                 layer = getattr(self,cstr)
                 out_,inds_ = layer(input_x,inds_prev)
                 inds_prev = inds_

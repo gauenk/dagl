@@ -103,7 +103,7 @@ class Model(nn.Module):
             module = import_module('model.' + args.model.lower())
             self.model = module.make_model(args)
         except:
-            module = import_module('dagl.dn_gray.model.' + args.model.lower())
+            module = import_module('dagl.original.dn_gray.model.' + args.model.lower())
             self.model = module.make_model(args)
 
         if not args.cpu:
@@ -119,7 +119,10 @@ class Model(nn.Module):
         if isinstance(ckp,str):
             ckp = Path(ckp)
         if isinstance(ckp,Path):
-            cdir = str(ckp.parents[0])
+            if str(ckp) == ".":
+                cdir = ckp
+            else:
+                cdir = str(ckp.parents[0])
         else:
             cdir = ckp.dir
         self.load(

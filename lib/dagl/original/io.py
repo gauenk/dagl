@@ -8,6 +8,7 @@ import torch as th
 from . import dn_gray
 from . import dn_real
 from ..utils import optional as _optional
+from ..utils import select_sigma,remove_state_prefix
 
 # -- auto populate fields to extract config --
 _fields = []
@@ -28,6 +29,7 @@ def load_model(cfg):
     io_cfg = extract_io_config(cfg,optional)
     task = optional(cfg,"task","denoising_bw")
     mtype = optional(cfg,'model_type','original') # for base
+    device = optional(cfg,'device','cuda:0')
     if init: return
 
     # -- init model --
@@ -38,7 +40,7 @@ def load_model(cfg):
     load_model_weights(model,io_cfg)
 
     # -- device --
-    model = model.to(cfg.device)
+    model = model.to(device)
 
     return model
 
@@ -49,7 +51,8 @@ def load_model_weights(model,cfg):
     else:
         print("Loading State: ",cfg.pretrained_path)
         state = th.load(cfg.pretrained_path,map_location=cfg.map_location)
-        model.load_state_dict(state)
+        state = remove_state_prefix(cfg.pretrained_prefix,state)
+        model.model.load_state_dict(state)
     return model
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -66,9 +69,12 @@ def extract_io_config(_cfg,optional):
     sigma = optional(_cfg,"sigma",0.)
     map_location = optional(_cfg,"map_location","cuda")
     base = Path("weights/checkpoints/DN_Gray/")
-    pretrained_path = base / Path("%d/model/model_best.pt" % sigma)
+    model_sigma = select_sigma(sigma)
+    pretrained_path = base / Path("%d/model/model_best.pt" % model_sigma)
     pairs = {"pretrained_load":True,
-             "pretrained_path":str(pretrained_path)}
+             "pretrained_path":str(pretrained_path),
+             "pretrained_prefix":"",
+             "map_location":map_location}
     return extract_pairs(pairs,_cfg,optional)
 
 def extract_search_config(_cfg,optional):
@@ -89,7 +95,7 @@ def extract_arch_config(_cfg,optional):
              "cpu":False,"n_GPUs":1,"pre_train":".",
              "save_models":False,"model":"DAGL","mode":"E",
              "print_model":False,"resume":0,"seed":1,
-             "n_resblock":16,"n_feats":64,"n_colors":1,
+             "n_resblocks":16,"n_feats":64,"n_colors":1,
              "res_scale":1,"rgb_range":1.,"stages":6,
              "blocks":3,"act":"relu","sigma":0.,
              "return_inds":False}

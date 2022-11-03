@@ -91,7 +91,7 @@ class CE(nn.Module):
         self.thr_conv = nn.Conv2d(in_channels=in_channels,out_channels=1,kernel_size=ksize,stride=stride_1,padding=0)
         self.bias_conv = nn.Conv2d(in_channels=in_channels,out_channels=1,kernel_size=ksize,stride=stride_1,padding=0)
 
-    def forward(self, b):
+    def forward(self, b, inds_prev=None):
         b1 = self.g(b)
         b2 = self.theta(b)
         b3 = b1
@@ -159,6 +159,7 @@ class CE(nn.Module):
             zi = zi / out_mask
             y.append(zi)
         y = torch.cat(y, dim=0)
-        return y
+        return y,None
+
     def GSmap(self,a,b):
         return torch.matmul(a,b)

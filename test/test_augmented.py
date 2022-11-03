@@ -1,8 +1,18 @@
 
-import data_hub
-import dagl
+
+
+# -- torch --
+import torch as th
 from easydict import EasyDict as edict
+
+# -- data --
+import data_hub
+
+# -- dagl --
+import dagl
 from dagl import optional
+
+
 
 def test_fwd():
 
@@ -11,11 +21,12 @@ def test_fwd():
     cfg.dname = "set8"
     cfg.isize = "128_128"
     cfg.vid_name = "sunflower"
-    cfg.nframes = 3
+    cfg.nframes = 1
     cfg.frame_start = 0
-    cfg.frame_end = 2
+    cfg.frame_end = 1
     cfg.sigma = 30
     cfg.device = "cuda:0"
+    cfg.bw = True
 
     # -- load data --
     data,loaders = data_hub.sets.load(cfg)
@@ -37,7 +48,7 @@ def test_fwd():
     augmented = dagl.load_model(model_cfg)
 
     # -- denoise --
-    deno_gt = original(noisy)
+    deno_gt = original.model(noisy)
     deno_te = augmented(noisy)
 
     # -- compare --
