@@ -195,7 +195,7 @@ def main():
     # cfg.isize = "512_512"
     # cfg.isize = "256_256"
     # cfg.isize = "128_128"
-    cfg.isize = "none"#"128_128"
+    # cfg.isize = "none"#"128_128"
     cfg.bw = True
     cfg.nframes = 5
     cfg.frame_start = 0
@@ -203,11 +203,10 @@ def main():
     cfg.attn_mode = "dnls_k"
 
     # -- processing --
-    cfg.spatial_crop_size = 512
+    cfg.spatial_crop_size = 540
     cfg.spatial_crop_overlap = 0.#0.1
     cfg.temporal_crop_size = 3#cfg.nframes
     cfg.temporal_crop_overlap = 0/5.#4/5. # 3 of 5 frames
-
 
     # -- get mesh --
     dnames,sigmas = ["set8"],[30]#,30.]
