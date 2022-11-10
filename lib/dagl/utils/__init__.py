@@ -9,5 +9,6 @@ from . import misc
 from . import metrics
 from . import proc_utils
 from .model_io import remove_state_prefix,select_sigma
+from .model_timer import hook_timer_to_model
 from .misc import optional
 from .timer import ExpTimer

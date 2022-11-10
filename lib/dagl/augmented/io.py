@@ -8,6 +8,7 @@ import torch as th
 from .dagl import RR as DAGL
 from ..utils import optional as _optional
 from ..utils import select_sigma,remove_state_prefix
+from ..utils.lin2conv import convert_lin2conv
 
 # -- auto populate fields to extract config --
 _fields = []
@@ -25,6 +26,7 @@ def load_model(cfg):
     # -- unpack configs --
     arch_cfg = extract_arch_config(cfg,optional)
     search_cfg = extract_search_config(cfg,optional)
+    print(search_cfg)
     io_cfg = extract_io_config(cfg,optional)
     mtype = optional(cfg,'model_type','augmented') # for base
     device = optional(cfg,'device','cuda:0')
@@ -47,6 +49,7 @@ def load_model_weights(model,cfg):
     else:
         print("Loading State: ",cfg.pretrained_path)
         state = th.load(cfg.pretrained_path,map_location=cfg.map_location)
+        convert_lin2conv(state,cfg.pretrained_lin2conv)
         model.load_state_dict(state)
     return model
 
@@ -66,21 +69,25 @@ def extract_io_config(_cfg,optional):
     map_location = optional(_cfg,"map_location","cuda")
     base = Path("weights/checkpoints/DN_Gray/")
     pretrained_path = base / Path("%d/model/model_best.pt" % model_sigma)
+    pretrained_lin2conv = False
     pairs = {"pretrained_load":True,
              "pretrained_path":str(pretrained_path),
              "pretrained_prefix":"",
-             "map_location":map_location}
+             "map_location":map_location,
+             "pretrained_lin2conv":pretrained_lin2conv}
     return extract_pairs(pairs,_cfg,optional)
 
 def extract_search_config(_cfg,optional):
     pairs = {"attn_mode":"dnls_k",
-             "k_s":200,"k_a":100,
+             "k_s":100,"k_a":100,
              "ws":21,"ws_r":3,
              "ps":7,"pt":1,"wt":0,
              "stride0":4,"stride1":1,"bs":-1,
              "rbwd":True,"nbwd":1,"exact":False,
-             "reflect_bounds":False,"refine_inds":[False,False,False],
-             "dilation":1,"return_inds":True,}
+             "reflect_bounds":True,
+             "refine_inds":False,
+             "dilation":1,"return_inds":False,
+             "use_pfc":False}
     return extract_pairs(pairs,_cfg,optional)
 
 def extract_arch_config(_cfg,optional):
@@ -111,5 +118,5 @@ def extract_model_config(cfg):
     return model_cfg
 
 # -- run to populate "_fields" --
-load_model({"__init":True})
+load_model(edict({"__init":True}))
 

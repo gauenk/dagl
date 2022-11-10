@@ -3,57 +3,7 @@ import torch
 import math
 import torch.nn.functional as F
 import time
-
-"""
-Fundamental functions
-"""
-def same_padding(images, ksizes, strides, rates):
-    assert len(images.size()) == 4
-    batch_size, channel, rows, cols = images.size()
-    out_rows = (rows + strides[0] - 1) // strides[0]
-    out_cols = (cols + strides[1] - 1) // strides[1]
-    effective_k_row = (ksizes[0] - 1) * rates[0] + 1
-    effective_k_col = (ksizes[1] - 1) * rates[1] + 1
-    padding_rows = max(0, (out_rows - 1) * strides[0] + effective_k_row - rows)
-    padding_cols = max(0, (out_cols - 1) * strides[1] + effective_k_col - cols)
-    # Pad the input
-    padding_top = int(padding_rows / 2.)
-    padding_left = int(padding_cols / 2.)
-    padding_bottom = padding_rows - padding_top
-    padding_right = padding_cols - padding_left
-    paddings = (padding_left, padding_right, padding_top, padding_bottom)
-    images = torch.nn.ZeroPad2d(paddings)(images)
-    return images, paddings
-
-
-def extract_image_patches(images, ksizes, strides, rates, padding='same'):
-    """
-    Extract patches from images and put them in the C output dimension.
-    :param padding:
-    :param images: [batch, channels, in_rows, in_cols]. A 4-D Tensor with shape
-    :param ksizes: [ksize_rows, ksize_cols]. The size of the sliding window for
-     each dimension of images
-    :param strides: [stride_rows, stride_cols]
-    :param rates: [dilation_rows, dilation_cols]
-    :return: A Tensor
-    """
-    assert len(images.size()) == 4
-    assert padding in ['same', 'valid']
-    paddings = (0, 0, 0, 0)
-
-    if padding == 'same':
-        images, paddings = same_padding(images, ksizes, strides, rates)
-    elif padding == 'valid':
-        pass
-    else:
-        raise NotImplementedError('Unsupported padding type: {}.\
-                Only "same" or "valid" are supported.'.format(padding))
-
-    unfold = torch.nn.Unfold(kernel_size=ksizes,
-                             padding=0,
-                             stride=strides)
-    patches = unfold(images)
-    return patches, paddings
+from .patching import same_padding,extract_image_patches
 
 """
 Graph model
@@ -74,22 +24,37 @@ class CE(nn.Module):
         self.use_topk=use_topk
         self.add_SE=add_SE
         self.num_edge = num_edge
-        self.g = nn.Conv2d(in_channels=self.in_channels, out_channels=self.inter_channels, kernel_size=3, stride=1,
+        self.g = nn.Conv2d(in_channels=self.in_channels,
+                           out_channels=self.inter_channels,
+                           kernel_size=3, stride=1,
                            padding=1)
-        self.W = nn.Conv2d(in_channels=self.inter_channels, out_channels=self.in_channels, kernel_size=1, stride=1,
+        self.W = nn.Conv2d(in_channels=self.inter_channels,
+                           out_channels=self.in_channels,
+                           kernel_size=1, stride=1,
                            padding=0)
-        self.theta = nn.Conv2d(in_channels=self.in_channels, out_channels=self.inter_channels, kernel_size=1, stride=1,
+        self.theta = nn.Conv2d(in_channels=self.in_channels,
+                               out_channels=self.inter_channels,
+                               kernel_size=1, stride=1,
                                padding=0)
         self.fc1 = nn.Sequential(
-            nn.Linear(in_features=ksize**2*inter_channels,out_features=(ksize**2*inter_channels)//4),
+            nn.Linear(in_features=ksize**2*inter_channels,
+                      out_features=(ksize**2*inter_channels)//4),
             nn.ReLU()
         )
         self.fc2 = nn.Sequential(
-            nn.Linear(in_features=ksize**2*inter_channels,out_features=(ksize**2*inter_channels)//4),
+            nn.Linear(in_features=ksize**2*inter_channels,
+                      out_features=(ksize**2*inter_channels)//4),
             nn.ReLU()
         )
-        self.thr_conv = nn.Conv2d(in_channels=in_channels,out_channels=1,kernel_size=ksize,stride=stride_1,padding=0)
-        self.bias_conv = nn.Conv2d(in_channels=in_channels,out_channels=1,kernel_size=ksize,stride=stride_1,padding=0)
+
+        self.thr_conv = nn.Conv2d(in_channels=in_channels,
+                                  out_channels=1,
+                                  kernel_size=ksize,
+                                  stride=stride_1,padding=0)
+        self.bias_conv = nn.Conv2d(in_channels=in_channels,
+                                   out_channels=1,
+                                   kernel_size=ksize,
+                                   stride=stride_1,padding=0)
 
     def forward(self, b, inds_prev=None):
         b1 = self.g(b)
@@ -132,8 +97,12 @@ class CE(nn.Module):
         for xi, wi,pi,thr,bias in zip(patch_112_group_2, patch_28_group, patch_112_group,soft_thr,soft_bias):
             c_s = pi.shape[2]
             k_s = wi[0].shape[2]
+            # print("[a] wi.shape: ",wi.shape,wi.view(wi.shape[1],-1).shape)
             wi = self.fc1(wi.view(wi.shape[1],-1))
+            # print("[b] wi.shape: ",wi.shape)
+            # print("[a] xi.shape: ",xi.shape,xi.view(xi.shape[1],-1).shape)
             xi = self.fc2(xi.view(xi.shape[1],-1)).permute(1,0)
+            # print("[b] xi.shape: ",xi.shape)
             score_map = torch.matmul(wi,xi)
             score_map = score_map.view(1, score_map.shape[0], math.ceil(w / self.stride_2),
                                        math.ceil(h / self.stride_2))
@@ -147,18 +116,24 @@ class CE(nn.Module):
             yi = F.softmax(yi * self.softmax_scale, dim=1)
             yi = yi * mask_b
 
+            print("[a] pi.shape: ",pi.shape)
             pi = pi.view(h_s * w_s, -1)
+            print("[b] pi.shape: ",pi.shape)
             yi = torch.mm(yi, pi)
             yi = yi.view(b_s, l_s, c_s, k_s, k_s)[0]
             zi = yi.view(1, l_s, -1).permute(0, 2, 1)
+
             zi = torch.nn.functional.fold(zi, (raw_int_bs[2], raw_int_bs[3]), (self.ksize, self.ksize), padding=paddings[0], stride=self.stride_1)
             inp = torch.ones_like(zi)
+
             inp_unf = torch.nn.functional.unfold(inp, (self.ksize, self.ksize), padding=paddings[0], stride=self.stride_1)
             out_mask = torch.nn.functional.fold(inp_unf, (raw_int_bs[2], raw_int_bs[3]), (self.ksize, self.ksize), padding=paddings[0], stride=self.stride_1)
             out_mask += (out_mask==0.).float()
+
             zi = zi / out_mask
             y.append(zi)
         y = torch.cat(y, dim=0)
+        print("y.shape: ",y.shape)
         return y,None
 
     def GSmap(self,a,b):

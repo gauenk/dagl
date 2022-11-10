@@ -6,8 +6,10 @@ from . import configs
 from . import lightning
 from . import flow
 from . import utils
+from . import exps
 from .utils import select_sigma
 from .utils import optional
+from .utils import hook_timer_to_model
 
 # -- publication api --
 from . import cvpr23
@@ -21,6 +23,7 @@ from . import cvpr23
 def load_model(cfg):
     mtype = optional(cfg,'model_type','augmented')
     if mtype == "augmented":
+        print("aug.")
         return augmented.load_model(cfg)
     elif mtype == "original":
         return original.load_model(cfg)

@@ -82,10 +82,12 @@ def get_spatial_chunk(vid,h_chunk,w_chunk,size):
 def fill_spatial_chunk(vid,ivid,h_chunk,w_chunk,size):
     vid[...,h_chunk:h_chunk+size,w_chunk:w_chunk+size] += ivid
 
-def get_spatial_chunk_flow(flows,h_chunk,w_chunk,ssize):
+def get_spatial_chunk_flow(flows,h_chunk,w_chunk,size):
     out_flows = edict()
     out_flows.fflow = flows.fflow[...,h_chunk:h_chunk+size,w_chunk:w_chunk+size]
     out_flows.bflow = flows.bflow[...,h_chunk:h_chunk+size,w_chunk:w_chunk+size]
+    out_flows.fflow = out_flows.fflow.contiguous()
+    out_flows.bflow = out_flows.bflow.contiguous()
     return out_flows
 
 def get_temporal_chunk_flow(flows,t_slice):

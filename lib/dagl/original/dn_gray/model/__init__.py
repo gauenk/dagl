@@ -154,7 +154,9 @@ class Model(nn.Module):
         if print_model:
             print(self.model)
 
-    def forward(self, x, idx_scale,ensemble=False):
+    # def forward(self, x, idx_scale,ensemble=False):
+    def forward(self, x, flows=None, ensemble=False):
+        idx_scale = 0
         self.ensemble = ensemble
         self.idx_scale = idx_scale
         target = self.get_model()

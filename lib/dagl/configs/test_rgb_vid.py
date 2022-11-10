@@ -9,4 +9,5 @@ def default():
     cfg.device = "cuda:0"
     cfg.dset = "te"
     cfg.saved_dir = "./output/saved_dir/"
+    cfg.seed = 123
     return cfg

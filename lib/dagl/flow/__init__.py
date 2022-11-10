@@ -40,6 +40,16 @@ def run_batch(vid,sigma):
     flows.bflow = th.stack(flows.bflow)
     return flows
 
+def bindex(flows,b,keepdim=False):
+    flows_b = edict()
+    if keepdim:
+        flows_b.fflow = flows.fflow[[b]]
+        flows_b.bflow = flows.bflow[[b]]
+    else:
+        flows_b.fflow = flows.fflow[b]
+        flows_b.bflow = flows.bflow[b]
+    return flows_b
+
 def run(vid_in,sigma):
 
     # -- init --

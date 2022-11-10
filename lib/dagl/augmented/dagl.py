@@ -1,14 +1,27 @@
+import torch as th
 import torch.nn as nn
 import torch
 import math
 import torch.nn.functional as F
 import time
+
+
+# -- clean code --
+from dagl.utils import clean_code
+from dagl.utils.config_blocks import config_to_list
+from . import shared_mods
+from . import inds_buffer
+
+# -- blocks --
 from .blocks import default_conv,ResBlock,MeanShift
-from .ce_layer import CE
+# from .ce_layer import CE
+from .ce_aug import CE
 
 def make_model(args, parent=False):
     return RR(args)
 
+@clean_code.add_methods_from(shared_mods)
+@clean_code.add_methods_from(inds_buffer)
 class RR(nn.Module):
     def __init__(self, args, search_cfg,
                  conv=default_conv):
@@ -18,11 +31,14 @@ class RR(nn.Module):
         n_feats = args.n_feats
         kernel_size = 3
         self.n_resblocks = n_resblocks
+        self.inds_buffer = []
+        self.return_inds = args.return_inds
 
         rgb_mean = (0.4488, 0.4371, 0.4040)
         rgb_std = (1.0, 1.0, 1.0)
 
-        msa = CES(in_channels=n_feats,search_cfg=search_cfg)
+        msa = CES(in_channels=n_feats,return_inds=args.return_inds,
+                  search_cfg=search_cfg)
         # define head module
         m_head = [conv(args.n_colors, n_feats, kernel_size)]
 
@@ -48,35 +64,25 @@ class RR(nn.Module):
         self.body = nn.Sequential(*m_body)
         self.tail = nn.Sequential(*m_tail)
 
+        # -- inds buffer --
+        self.use_inds_buffer = self.return_inds
+        self.inds_buffer = []
+
     def forward(self, x, flows=None):
         res = self.head(x)
+        inds = None
         mid = self.n_resblocks//2
         for _name,layer in self.body.named_children():
-            if int(_name) == mid: res = layer(res,flows)
+            if int(_name) == mid:
+                res,inds = layer(res,flows)
+                self.update_inds_buffer(inds)
             else: res = layer(res)
         res = self.tail(res)
         return x+res
 
-    def load_state_dict(self, state_dict, strict=True):
-        own_state = self.state_dict()
-        for name, param in state_dict.items():
-            if name in own_state:
-                if isinstance(param, nn.Parameter):
-                    param = param.data
-                try:
-                    own_state[name].copy_(param)
-                except Exception:
-                    if name.find('tail') == -1:
-                        raise RuntimeError('While copying the parameter named {}, '
-                                           'whose dimensions in the model are {} and '
-                                           'whose dimensions in the checkpoint are {}.'
-                                           .format(name, own_state[name].size(), param.size()))
-            elif strict:
-                if name.find('tail') == -1:
-                    raise KeyError('unexpected key "{}" in state_dict'
-                                   .format(name))
+@clean_code.add_methods_from(inds_buffer)
 class CES(nn.Module):
-    def __init__(self,in_channels,search_cfg,num=4):
+    def __init__(self,in_channels,return_inds,search_cfg,num=4):
         super(CES,self).__init__()
         RBS1 = [
             ResBlock(default_conv, n_feats=in_channels,
@@ -95,57 +101,65 @@ class CES(nn.Module):
             *RBS2
         )
         # stage 1 (4 head)
-        search_cfg_l = search_config_list(search_cfg,4*3)
-        self.c1_1 = CE(in_channels=in_channels,search_cfg=search_cfg_l[0])
-        self.c1_2 = CE(in_channels=in_channels,search_cfg=search_cfg_l[1])
-        self.c1_3 = CE(in_channels=in_channels,search_cfg=search_cfg_l[2])
-        self.c1_4 = CE(in_channels=in_channels,search_cfg=search_cfg_l[3])
+        self.return_inds = return_inds
+        search_cfg_l = config_to_list(search_cfg,4*3)
+        print(search_cfg_l[0])
+        print(search_cfg_l[11])
+        self.c1_1 = CE(in_channels=in_channels,**search_cfg_l[0])
+        self.c1_2 = CE(in_channels=in_channels,**search_cfg_l[1])
+        self.c1_3 = CE(in_channels=in_channels,**search_cfg_l[2])
+        self.c1_4 = CE(in_channels=in_channels,**search_cfg_l[3])
         self.c1_c = nn.Conv2d(in_channels,in_channels,1,1,0)
         # stage 2 (4 head)
-        self.c2_1 = CE(in_channels=in_channels,search_cfg=search_cfg_l[4])
-        self.c2_2 = CE(in_channels=in_channels,search_cfg=search_cfg_l[5])
-        self.c2_3 = CE(in_channels=in_channels,search_cfg=search_cfg_l[6])
-        self.c2_4 = CE(in_channels=in_channels,search_cfg=search_cfg_l[7])
+        self.c2_1 = CE(in_channels=in_channels,**search_cfg_l[4])
+        self.c2_2 = CE(in_channels=in_channels,**search_cfg_l[5])
+        self.c2_3 = CE(in_channels=in_channels,**search_cfg_l[6])
+        self.c2_4 = CE(in_channels=in_channels,**search_cfg_l[7])
         self.c2_c = nn.Conv2d(in_channels,in_channels,1,1,0)
         # stage 3 (4 head)
-        self.c3_1 = CE(in_channels=in_channels,search_cfg=search_cfg_l[8])
-        self.c3_2 = CE(in_channels=in_channels,search_cfg=search_cfg_l[9])
-        self.c3_3 = CE(in_channels=in_channels,search_cfg=search_cfg_l[10])
-        self.c3_4 = CE(in_channels=in_channels,search_cfg=search_cfg_l[11])
+        self.c3_1 = CE(in_channels=in_channels,**search_cfg_l[8])
+        self.c3_2 = CE(in_channels=in_channels,**search_cfg_l[9])
+        self.c3_3 = CE(in_channels=in_channels,**search_cfg_l[10])
+        self.c3_4 = CE(in_channels=in_channels,**search_cfg_l[11])
         self.c3_c = nn.Conv2d(in_channels,in_channels,1,1,0)
+
+        # -- inds buffer --
+        self.use_inds_buffer = self.return_inds
+        self.inds_buffer = []
+
 
     def forward(self, x, flows=None):
         # 4head-3stages
         nstages = 3
         nheads = 4
         stage_out = x
+        inds_prev = None
         for stage in range(nstages):
             input_x = stage_out
             stage_out,stage_inds = [],[]
-            inds_prev = None
             for head in range(nheads):
                 cstr = "c%d_%d" % (stage+1,head+1)
                 layer = getattr(self,cstr)
-                out_,inds_ = layer(input_x,inds_prev)
+                # th.cuda.synchronize()
+                # print("layer: ",cstr)
+                out_,inds_ = layer(input_x,flows,inds_prev)
+                # th.cuda.synchronize()
+                # print("inds.shape: ",inds_.shape)
+                self.update_inds_buffer(inds_)
                 inds_prev = inds_
                 stage_out.append(out_)
             conv = getattr(self,"c%d_c" % (stage+1))
+            # th.cuda.synchronize()
             stage_out = conv(torch.cat(stage_out,dim=1))+input_x
+            # th.cuda.synchronize()
             if stage < (nstages-1):
                 RBS = getattr(self,"RBS%d" % (stage+1))
                 stage_out = RBS(stage_out)
-        return stage_out
 
-        # out = self.c1_c(torch.cat((self.c1_1(x),self.c1_2(x),self.c1_3(x),self.c1_4(x)),dim=1))+x
-        # out = self.RBS1(out)
-        # out = self.c2_c(torch.cat((self.c2_1(out),self.c2_2(out),self.c2_3(out),self.c2_4(out)),dim=1))+out
-        # out  = self.RBS2(out)
-        # out = self.c3_c(torch.cat((self.c3_1(out),self.c3_2(out),self.c3_3(out),self.c3_4(out)),dim=1))+out
-        # return out
+        # -- grab and clear --
+        # inds = self.get_inds_buffer()
+        inds = self.inds_buffer
+        self.clear_inds_buffer()
 
-def search_config_list(cfg,nblocks=12):
-    cfgs = []
-    for _ in range(nblocks):
-        cfgs.append(None)
-    return cfgs
+        return stage_out,inds
 
