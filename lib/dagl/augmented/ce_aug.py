@@ -163,7 +163,7 @@ class CE(nn.Module):
         timer = ExpTimer(use_timer)
 
         # -- get features --
-        with TimeIt(timer,"extract_ftrs"):
+        with TimeIt(timer,"extract"):
             ftrs = self.extract_features(vid)
             vid1,vid2,vid3 = ftrs
             vid4, _ = same_padding(vid,[self.ps,self.ps],

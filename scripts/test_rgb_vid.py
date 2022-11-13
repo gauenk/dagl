@@ -105,7 +105,7 @@ def run_exp(_cfg):
 
         # -- optical flow --
         timer.start("flow")
-        if cfg.flow == "true":
+        if cfg.flow is True:
             sigma_est = flow.est_sigma(noisy)
             flows = flow.run_batch(noisy[None,:],sigma_est)
         else:
@@ -121,7 +121,7 @@ def run_exp(_cfg):
         # -- run once for setup gpu --
         if cfg.burn_in is True:
             with th.no_grad():
-                deno = fwd_fxn(noisy/imax,flows)
+                deno = fwd_fxn(noisy[[0],...,:128,:128]/imax,None)
             model.reset_times()
 
         # -- benchmarking --
@@ -132,9 +132,6 @@ def run_exp(_cfg):
         deno = deno.clamp(0.,1.)*imax
         timer.sync_stop("deno")
         mem_alloc,mem_res = gpu_mem.print_peak_gpu_stats(True,"val",reset=True)
-
-        # -- viz --
-        print(model.times)
 
         # -- save example --
         out_dir = Path(cfg.saved_dir) / str(cfg.uuid)
@@ -158,18 +155,24 @@ def run_exp(_cfg):
         results.mem_res.append([mem_res])
         results.mem_alloc.append([mem_alloc])
         for name,time in timer.items():
+            if not(name in results):
+                results[name] = []
             results[name].append(time)
-        print(timer)
+        for name,time in model.times.items():
+            if not(name in results):
+                results[name] = []
+            results[name].append(time)
 
+    th.cuda.empty_cache()
     return results
 
 def load_trained_state(model,use_train,ca_fwd,sigma,ws,wt):
 
     # -- read cache --
     # results = cache.load_exp(cfg) # possibly load result
-    if np.abs(sigma-50.) < 10:
-        model_path = "output/checkpoints/1e61f94f-5d8a-4a9c-a873-401fff0de914-epoch=45.ckpt"
-    elif np.abs(sigma-30.) < 10:
+    if np.abs(sigma-50.) < 8:
+        model_path = "output/checkpoints/1e61f94f-5d8a-4a9c-a873-401fff0de914-epoch=141.ckpt"
+    elif np.abs(sigma-30.) < 11:
         model_path = "output/checkpoints/dd9c0d93-3cbf-4c1c-9cbb-f8cb677d1fed-epoch=33.ckpt"
     else:
         raise ValueError("Missing sigma level")
@@ -219,16 +222,17 @@ def main():
     # -- processing --
     cfg.spatial_crop_size = "none"
     cfg.spatial_crop_overlap = 0.#0.1
-    cfg.temporal_crop_size = 5#cfg.nframes
+    cfg.temporal_crop_size = 7#cfg.nframes
     cfg.temporal_crop_overlap = 0/5.#4/5. # 3 of 5 frames
 
     # -- get mesh --
-    dnames,sigmas = ["set8"],[30]#,30.]
+    dnames,sigmas = ["set8"],[30,50]#,30.]
     # vid_names = ["tractor"]
     # vid_names = ["sunflower"]
     # vid_names = ["sunflower","hypersmooth","tractor","motorbike"]
     # vid_names = ["park_joy"]
-    vid_names = ["sunflower","park_joy"]
+    vid_names = ["sunflower","tractor","park_joy"]
+    # vid_names = ["sunflower","park_joy"]
     # vid_names = ["snowboard","sunflower","tractor","motorbike",
     #              "hypersmooth","park_joy","rafting","touchdown"]
 
@@ -245,7 +249,6 @@ def main():
     # cfg.k_a = 25
     cfg.ws = 27
     cfg.wt = 3
-    cfg.ws_r = 1
     cfg.return_inds = True
     cfg.arch_return_inds = True
     cfg.use_pfc = False
@@ -268,7 +271,8 @@ def main():
     flow = ["true"]
     ca_fwd_list,use_train = ["dnls_k"],["true"]
     # refine_inds = [("t-"*12)[:-1],("f-"*12)[:-1],("f-"+"t-"*11)[:-1]]
-    refine_inds = [("t-"*12)[:-1],("f-"*12)[:-1]]
+    refine_inds = [("t-"*12)[:-1],("f-"*12)[:-1],#("f-"+"t-"*11)[:-1],
+                   ("f-t-t-t-"*3)[:-1]]
     # refine_inds = [("f-"*12)[:-1],("f-t-t-t-"*3)[:-1],
     #                ("f-"+"t-"*11)[:-1],("f-t-t-t-t-t-"*2)[:-1]]
     #,("f-f-t-t-"*3)[:-1],
@@ -279,10 +283,11 @@ def main():
     aug_test = ["true","false"]
     aug_refine_inds = ["true"]
     model_type = ['augmented']
+    ws_r = [1,3]
     exp_lists = {"dname":dnames,"vid_name":vid_names,"sigma":sigmas,
                  "flow":flow,"use_train":use_train,
                  "ca_fwd":ca_fwd_list,"use_chop":["false"],"model_type":model_type,
-                 "refine_inds":refine_inds,
+                 "refine_inds":refine_inds,"ws_r":ws_r,
                  "aug_refine_inds":aug_refine_inds,"aug_test":aug_test}
     exps_a = cache_io.mesh_pydicts(exp_lists) # create mesh
     cache_io.append_configs(exps_a,cfg) # merge the two
@@ -352,11 +357,11 @@ def main():
     # print(records.filter(like="timer"))
 
     # -- neat report --
-
     fields = ['use_train','refine_inds','use_chop','aug_test','sigma','vid_name']
     fields_summ = ['use_train','refine_inds','use_chop','aug_test']
-    res_fields = ['psnrs','ssims','timer_deno','mem_alloc','mem_res']
-    res_fmt = ['%2.3f','%1.3f','%2.3f','%2.3f','%2.3f']
+    res_fields = ['psnrs','ssims','timer_deno','timer_extract',
+                  'timer_search','timer_agg','mem_alloc','mem_res']
+    res_fmt = ['%2.3f','%1.3f','%2.3f','%2.3f','%2.3f','%2.3f','%2.3f','%2.3f']
 
     # -- run agg --
     agg = {key:[np.stack] for key in res_fields}
