@@ -8,7 +8,8 @@ from . import timer
 from . import misc
 from . import metrics
 from . import proc_utils
+from . import aug_test
 from .model_io import remove_state_prefix,select_sigma
 from .model_timer import hook_timer_to_model
-from .misc import optional
+from .misc import optional,optional_attr
 from .timer import ExpTimer

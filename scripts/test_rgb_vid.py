@@ -1,8 +1,9 @@
 
 # -- misc --
 import os,math,tqdm
-import pprint,random
+import pprint,random,copy
 pp = pprint.PrettyPrinter(indent=4)
+from functools import partial
 
 # -- linalg --
 import numpy as np
@@ -31,9 +32,13 @@ from dagl.utils.misc import optional,slice_flows
 import dagl.utils.gpu_mem as gpu_mem
 from dagl.utils.misc import rslice,write_pickle,read_pickle
 from dagl.utils.proc_utils import get_fwd_fxn#spatial_chop,temporal_chop
+from dagl.utils.aug_test import test_x8
 
+def run_exp(_cfg):
 
-def run_exp(cfg):
+    # -- init --
+    cfg = copy.deepcopy(_cfg)
+    cache_io.exp_strings2bools(cfg)
 
     # -- set device --
     th.cuda.empty_cache()
@@ -98,11 +103,6 @@ def run_exp(cfg):
         # -- create timer --
         timer = dagl.utils.timer.ExpTimer()
 
-        # -- size --
-        nframes = noisy.shape[0]
-        ngroups = int(25 * 37./nframes)
-        batch_size = 390*39#ngroups*1024
-
         # -- optical flow --
         timer.start("flow")
         if cfg.flow == "true":
@@ -112,10 +112,19 @@ def run_exp(cfg):
             flows = flow.run_zeros(noisy[None,:])
         timer.sync_stop("flow")
 
-        # -- denoise --
-        fwd_fxn = get_fwd_fxn(cfg,model)
-        with th.no_grad():
-            deno = fwd_fxn(noisy/imax,flows)
+        # -- fwd fxn --
+        if cfg.aug_test:
+            aug_fxn = partial(test_x8,model,use_refine=cfg.aug_refine_inds)
+        else: aug_fxn = model
+        fwd_fxn = get_fwd_fxn(cfg,aug_fxn)
+
+        # -- run once for setup gpu --
+        if cfg.burn_in is True:
+            with th.no_grad():
+                deno = fwd_fxn(noisy/imax,flows)
+            model.reset_times()
+
+        # -- benchmarking --
         gpu_mem.print_peak_gpu_stats(False,"val",reset=True)
         timer.sync_start("deno")
         with th.no_grad():
@@ -123,6 +132,9 @@ def run_exp(cfg):
         deno = deno.clamp(0.,1.)*imax
         timer.sync_stop("deno")
         mem_alloc,mem_res = gpu_mem.print_peak_gpu_stats(True,"val",reset=True)
+
+        # -- viz --
+        print(model.times)
 
         # -- save example --
         out_dir = Path(cfg.saved_dir) / str(cfg.uuid)
@@ -192,7 +204,7 @@ def main():
 
     # -- get defaults --
     cfg = configs.test_rgb_vid.default()
-    # cfg.isize = "512_512"
+    cfg.isize = "512_512"
     # cfg.isize = "256_256"
     # cfg.isize = "128_128"
     # cfg.isize = "none"#"128_128"
@@ -201,18 +213,22 @@ def main():
     cfg.frame_start = 0
     cfg.frame_end = cfg.frame_start+cfg.nframes-1
     cfg.attn_mode = "dnls_k"
+    cfg.burn_in = True
+
 
     # -- processing --
-    cfg.spatial_crop_size = 540
+    cfg.spatial_crop_size = "none"
     cfg.spatial_crop_overlap = 0.#0.1
-    cfg.temporal_crop_size = 3#cfg.nframes
+    cfg.temporal_crop_size = 5#cfg.nframes
     cfg.temporal_crop_overlap = 0/5.#4/5. # 3 of 5 frames
 
     # -- get mesh --
     dnames,sigmas = ["set8"],[30]#,30.]
     # vid_names = ["tractor"]
-    vid_names = ["sunflower"]
-    # vid_names = ["sunflower","hypersmooth","tractor"]
+    # vid_names = ["sunflower"]
+    # vid_names = ["sunflower","hypersmooth","tractor","motorbike"]
+    # vid_names = ["park_joy"]
+    vid_names = ["sunflower","park_joy"]
     # vid_names = ["snowboard","sunflower","tractor","motorbike",
     #              "hypersmooth","park_joy","rafting","touchdown"]
 
@@ -223,14 +239,16 @@ def main():
     # cfg.refine_inds = "f-f-f"
 
     # -- prop0 --
-    # cfg.k_s = 100
-    # cfg.k_a = 100
-    cfg.k_s = 75
-    cfg.k_a = 25
+    cfg.k_s = 100
+    cfg.k_a = 100
+    # cfg.k_s = 75
+    # cfg.k_a = 25
     cfg.ws = 27
     cfg.wt = 3
     cfg.ws_r = 1
     cfg.return_inds = True
+    cfg.arch_return_inds = True
+    cfg.use_pfc = False
     # cfg.k_a = 50
     # cfg.refine_inds = "f-f-f"
 
@@ -247,21 +265,25 @@ def main():
     # cfg.k_a = '100-100-100'
     # cfg.refine_inds = "f-f-f"
 
-    k = [100]
-    flow,isizes = ["true"],["none"]
+    flow = ["true"]
     ca_fwd_list,use_train = ["dnls_k"],["true"]
-    refine_inds = [("f-"*12)[:-1],("f-t-t-t-"*3)[:-1],
-                   ("f-"+"t-"*11)[:-1],("f-t-t-t-t-t-"*2)[:-1]]
+    # refine_inds = [("t-"*12)[:-1],("f-"*12)[:-1],("f-"+"t-"*11)[:-1]]
+    refine_inds = [("t-"*12)[:-1],("f-"*12)[:-1]]
+    # refine_inds = [("f-"*12)[:-1],("f-t-t-t-"*3)[:-1],
+    #                ("f-"+"t-"*11)[:-1],("f-t-t-t-t-t-"*2)[:-1]]
     #,("f-f-t-t-"*3)[:-1],
     # ("f-f-f-t-"*3)[:-1]]#,("f-t-t-"*4)[:-1],("f-f-t-"*4)[:-1]]
-    print(refine_inds)
+    # print(refine_inds)
     # refine_inds = ["f-f-f","f-f-t","f-t-f","f-t-t"]
+    # aug_test = ["false"]
+    aug_test = ["true","false"]
+    aug_refine_inds = ["true"]
     model_type = ['augmented']
     exp_lists = {"dname":dnames,"vid_name":vid_names,"sigma":sigmas,
-                 "flow":flow,"isize":isizes,
-                 "use_train":use_train,"ca_fwd":ca_fwd_list,
-                 "k":k, "use_chop":["false"],
-                 "model_type":model_type,"refine_inds":refine_inds}
+                 "flow":flow,"use_train":use_train,
+                 "ca_fwd":ca_fwd_list,"use_chop":["false"],"model_type":model_type,
+                 "refine_inds":refine_inds,
+                 "aug_refine_inds":aug_refine_inds,"aug_test":aug_test}
     exps_a = cache_io.mesh_pydicts(exp_lists) # create mesh
     cache_io.append_configs(exps_a,cfg) # merge the two
 
@@ -288,7 +310,7 @@ def main():
     cache_io.append_configs(exps_b,cfg) # merge the two
 
     # -- cat exps --
-    exps = exps_a + exps_b
+    exps = exps_a# + exps_b
 
     # -- run exps --
     nexps = len(exps)
@@ -300,6 +322,7 @@ def main():
             print(f"Running experiment number {exp_num+1}/{nexps}")
             print("-="*25+"-")
             pp.pprint(exp)
+        # exit(0)
 
         # -- logic --
         uuid = cache.get_uuid(exp) # assing ID to each Dict in Meshgrid
@@ -307,6 +330,7 @@ def main():
         clear_exp = exp.attn_mode == "dnls_k" and exp.model_type == "refactored"
         clear_exp = clear_exp and (exp.ws != 27)
         clear_exp = clear_exp or ('t' in exp.refine_inds)
+        # cache.clear_exp(uuid)
         # if clear_exp or True:
         #     cache.clear_exp(uuid)
         # if exp.use_chop == "false" and exp.ca_fwd != "dnls_k":
@@ -327,44 +351,44 @@ def main():
     records = cache.load_flat_records(exps)
     # print(records.filter(like="timer"))
 
-    # -- viz report --
-    for use_train,tdf in records.groupby("use_train"):
-        for ca_group,gdf in tdf.groupby("refine_inds"):
-            for use_chop,cdf in gdf.groupby("use_chop"):
-                for sigma,sdf in cdf.groupby("sigma"):
-                    print("--- %d ---" % sigma)
-                    for use_flow,fdf in sdf.groupby("flow"):
-                        agg_psnrs,agg_ssims,agg_dtime = [],[],[]
-                        agg_mem_res,agg_mem_alloc = [],[]
-                        print("--- %s (%s,%s,%s) ---" %
-                              (ca_group,use_train,use_flow,use_chop))
-                        for vname,vdf in fdf.groupby("vid_name"):
-                            psnrs = np.stack(vdf['psnrs'])
-                            dtime = np.stack(vdf['timer_deno'])
-                            mem_alloc = np.stack(vdf['mem_alloc'])
-                            mem_res = np.stack(vdf['mem_res'])
-                            ssims = np.stack(vdf['ssims'])
-                            psnr_mean = psnrs.mean().item()
-                            ssim_mean = ssims.mean().item()
-                            uuid = vdf['uuid'].iloc[0]
-                            # print(dtime,mem_gb)
-                            # print(vname,psnr_mean,ssim_mean,uuid)
-                            args = (vname,psnr_mean,ssim_mean,uuid)
-                            print("%13s: %2.3f %1.3f %s" % args)
-                            agg_psnrs.append(psnr_mean)
-                            agg_ssims.append(ssim_mean)
-                            agg_mem_res.append(mem_res.mean().item())
-                            agg_mem_alloc.append(mem_alloc.mean().item())
-                            agg_dtime.append(dtime.mean().item())
-                        psnr_mean = np.mean(agg_psnrs)
-                        ssim_mean = np.mean(agg_ssims)
-                        dtime_mean = np.mean(agg_dtime)
-                        mem_res_mean = np.mean(agg_mem_res)
-                        mem_alloc_mean = np.mean(agg_mem_alloc)
-                        uuid = gdf['uuid']
-                        params = ("Ave",psnr_mean,ssim_mean,dtime_mean,
-                                  mem_res_mean,mem_alloc_mean)
-                        print("%13s: %2.3f %1.3f %2.3f %2.3f %2.3f" % params)
+    # -- neat report --
+
+    fields = ['use_train','refine_inds','use_chop','aug_test','sigma','vid_name']
+    fields_summ = ['use_train','refine_inds','use_chop','aug_test']
+    res_fields = ['psnrs','ssims','timer_deno','mem_alloc','mem_res']
+    res_fmt = ['%2.3f','%1.3f','%2.3f','%2.3f','%2.3f']
+
+    # -- run agg --
+    agg = {key:[np.stack] for key in res_fields}
+    grouped = records.groupby(fields).agg(agg)
+    grouped.columns = res_fields
+    grouped = grouped.reset_index()
+    for field in res_fields:
+        grouped[field] = grouped[field].apply(np.mean)
+    res_fmt = {k:v for k,v in zip(res_fields,res_fmt)}
+    print("\n\n" + "-="*10+"-" + "Report" + "-="*10+"-")
+    for sigma,sdf in grouped.groupby("sigma"):
+        print("--> sigma: %d <--" % sigma)
+        for gfields,gdf in sdf.groupby(fields_summ):
+            gfields = list(gfields)
+
+            # -- header --
+            header = "-"*15 + "\n"
+            for i,field in enumerate(fields_summ):
+                header += "%s " % (gfields[i])
+            print(header)
+
+            for vid_name,vdf in gdf.groupby("vid_name"):
+                # -- res --
+                res = "%13s: " % vid_name
+                for field in res_fields:
+                    res += res_fmt[field] % (vdf[field].mean()) + " "
+                print(res)
+            # -- res --
+            res = "%13s: " % "Ave"
+            for field in res_fields:
+                res += res_fmt[field] % (gdf[field].mean()) + " "
+            print(res)
 
 
 if __name__ == "__main__":

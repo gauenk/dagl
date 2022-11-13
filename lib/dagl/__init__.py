@@ -12,7 +12,7 @@ from .utils import optional
 from .utils import hook_timer_to_model
 
 # -- publication api --
-from . import cvpr23
+from . import icml23
 
 # -- model api --
 # from .original import extract_model_config as extract_model_config_orig

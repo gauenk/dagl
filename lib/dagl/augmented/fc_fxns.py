@@ -1,6 +1,7 @@
 
 
 import dnls
+import torch as th
 from einops import rearrange
 from dagl.utils import clean_code
 __methods__ = [] # self is a DataStore
@@ -18,11 +19,12 @@ def extract_fc(self,vid1,vid3):
 @register_method
 def extract_fc_pfc(self,vid1,vid3):
     # print("vid1.shape:" ,vid1.shape)
-    vid1 = self.pfc0(vid1[None,:])[0].contiguous().contiguous()
-    vid3 = self.pfc1(vid3[None,:])[0].contiguous().contiguous()
-    # print("vid3.shape:" ,vid3.shape)
-    assert_nonan(vid1)
-    assert_nonan(vid3)
+    # vid1 = th.zeros_like(vid1)[...,:4,:,:].contiguous()
+    # vid3 = th.zeros_like(vid3)[...,:4,:,:].contiguous()
+    vid1 = self.pfc0(vid1[None,:])[0]
+    vid3 = self.pfc1(vid3[None,:])[0]
+    # assert_nonan(vid1)
+    # assert_nonan(vid3)
     return vid1,vid3
 
 @register_method
@@ -47,8 +49,8 @@ def extract_fc_standard(self,vid1,vid3):
     vid3 = ifold3.vid/ifold3.zvid
     assert_nonan(vid1)
     assert_nonan(vid3)
-    print("vid1.shape:" ,vid1.shape)
-    print("vid3.shape:" ,vid3.shape)
+    # print("vid1.shape:" ,vid1.shape)
+    # print("vid3.shape:" ,vid3.shape)
     return vid1[0],vid3[0]
 
 @register_method

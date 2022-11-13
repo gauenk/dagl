@@ -8,6 +8,11 @@ def optional(pydict,key,default):
     elif key in pydict: return pydict[key]
     else: return default
 
+def optional_attr(pyobj,attr,default):
+    if pyobj is None: return default
+    elif hasattr(pyobj,attr): return getattr(pyobj,attr)
+    else: return default
+
 def optional_delete(pydict,key):
     if pydict is None: return
     elif key in pydict: del pydict[key]

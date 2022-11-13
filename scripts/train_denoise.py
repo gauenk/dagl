@@ -219,8 +219,10 @@ def main():
     cfg = exps_menu.finetune_patch2vid.load("base")
     cfg.seed = 234
     cfg.dname = "davis_cropped"
-    cfg.sigma = 50.
+    cfg.sigma = 25.
     cfg.isize = "128_128"
+    cfg.bw = True
+    cfg.refine_inds = 't'+'-f'*11
 
     # -- num to train --
     cfg.nsamples_tr = 0

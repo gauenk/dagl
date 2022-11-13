@@ -9,8 +9,10 @@ import time
 # -- clean code --
 from dagl.utils import clean_code
 from dagl.utils.config_blocks import config_to_list
+from dagl.utils.timer import ExpTimer,AggTimer
 from . import shared_mods
 from . import inds_buffer
+from . import timer_fxn
 
 # -- blocks --
 from .blocks import default_conv,ResBlock,MeanShift
@@ -22,6 +24,7 @@ def make_model(args, parent=False):
 
 @clean_code.add_methods_from(shared_mods)
 @clean_code.add_methods_from(inds_buffer)
+@clean_code.add_methods_from(timer_fxn)
 class RR(nn.Module):
     def __init__(self, args, search_cfg,
                  conv=default_conv):
@@ -32,14 +35,15 @@ class RR(nn.Module):
         kernel_size = 3
         self.n_resblocks = n_resblocks
         self.inds_buffer = []
-        self.return_inds = args.return_inds
+        self.return_inds = args.arch_return_inds
 
         rgb_mean = (0.4488, 0.4371, 0.4040)
         rgb_std = (1.0, 1.0, 1.0)
 
-        msa = CES(in_channels=n_feats,return_inds=args.return_inds,
+        msa = CES(in_channels=n_feats,return_inds=args.arch_return_inds,
                   search_cfg=search_cfg)
         # define head module
+        self.msa = msa
         m_head = [conv(args.n_colors, n_feats, kernel_size)]
 
         # define body module
@@ -68,19 +72,39 @@ class RR(nn.Module):
         self.use_inds_buffer = self.return_inds
         self.inds_buffer = []
 
-    def forward(self, x, flows=None):
+    @property
+    def times(self):
+        return self.msa.times
+
+    def reset_times(self):
+        self.msa.reset_times()
+
+    def forward(self, x, flows=None, inds_p=None):
+        timer = ExpTimer(True)
+        timer.sync_start("head")
         res = self.head(x)
+        timer.sync_stop("head")
         inds = None
         mid = self.n_resblocks//2
         for _name,layer in self.body.named_children():
+            timer.sync_start(_name)
             if int(_name) == mid:
-                res,inds = layer(res,flows)
-                self.update_inds_buffer(inds)
+                res,inds = layer(res,flows,inds_p)
+                self.inds_buffer = inds
+                # self.update_inds_buffer(inds)
             else: res = layer(res)
+            timer.sync_stop(_name)
+        timer.sync_start("tail")
         res = self.tail(res)
+        timer.sync_stop("tail")
+        self.update_timer(timer)
+        # print("-="*30)
+        # print(timer)
+        # print("-="*30)
         return x+res
 
 @clean_code.add_methods_from(inds_buffer)
+@clean_code.add_methods_from(timer_fxn)
 class CES(nn.Module):
     def __init__(self,in_channels,return_inds,search_cfg,num=4):
         super(CES,self).__init__()
@@ -126,9 +150,27 @@ class CES(nn.Module):
         # -- inds buffer --
         self.use_inds_buffer = self.return_inds
         self.inds_buffer = []
+        self.times = AggTimer()
 
+    def reset_times(self):
+        self._reset_times()
+        nstages = 3
+        nheads = 4
+        for i in range(nstages):
+            for j in range(nheads):
+                layer_ij = getattr(self,'c%d_%d'%(i+1,j+1))
+                layer_ij._reset_times()
 
-    def forward(self, x, flows=None):
+    def update_ca_times(self):
+        nstages = 3
+        nheads = 4
+        for i in range(nstages):
+            for j in range(nheads):
+                layer_ij = getattr(self,'c%d_%d'%(i+1,j+1))
+                self.update_timer(layer_ij.times)
+                layer_ij._reset_times()
+
+    def forward(self, x, flows=None, inds_p=None):
         # 4head-3stages
         nstages = 3
         nheads = 4
@@ -142,6 +184,10 @@ class CES(nn.Module):
                 layer = getattr(self,cstr)
                 # th.cuda.synchronize()
                 # print("layer: ",cstr)
+                if not(inds_p is None):
+                    p_index = head+stage*nheads
+                    if p_index < inds_p.shape[0]:
+                        inds_prev = inds_p[p_index]
                 out_,inds_ = layer(input_x,flows,inds_prev)
                 # th.cuda.synchronize()
                 # print("inds.shape: ",inds_.shape)
@@ -160,6 +206,8 @@ class CES(nn.Module):
         # inds = self.get_inds_buffer()
         inds = self.inds_buffer
         self.clear_inds_buffer()
+        self.update_ca_times()
+
 
         return stage_out,inds
 

@@ -9,6 +9,11 @@ from dagl.utils import clean_code
 __methods__ = [] # self is a DataStore
 register_method = clean_code.register_method(__methods__)
 
+@register_method
+def update_search(self,inds_is_none):
+    if self.refine_inds:
+        self.search_kwargs["refine_inds"] = not(inds_is_none)
+        self.search = self.init_search(**self.search_kwargs)
 
 @register_method
 def init_search(self,**kwargs):
@@ -29,7 +34,6 @@ def init_refine(self,k=100,ps=7,pt=0,ws=21,ws_r=3,wt=0,
                 reflect_bounds=False):
     use_k = k > 0
     search_abs = False
-    fflow,bflow = None,None
     oh0,ow0,oh1,ow1 = 1,1,3,3
     nheads = 1
     anchor_self = False
@@ -64,7 +68,7 @@ def init_dnls_k(self,k=100,ps=7,pt=0,ws=21,ws_r=3,wt=0,stride0=4,stride1=1,
 
 @register_method
 def init_wpsum(self,ps=7,pt=0,dilation=1,reflect_bounds=False,
-               rbwd=True,nbwd=1,exact=False):
+               rbwd=True,nbwd=1,exact=False,use_wpsum_patches=False):
     wpsum = dnls.reducers.WeightedPatchSumHeads(ps, pt, h_off=0, w_off=0,
                                                 dilation=dilation,
                                                 reflect_bounds=reflect_bounds,

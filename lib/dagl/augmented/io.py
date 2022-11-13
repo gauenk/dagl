@@ -99,7 +99,7 @@ def extract_arch_config(_cfg,optional):
              "n_resblocks":16,"n_feats":64,"n_colors":1,
              "res_scale":1,"rgb_range":1.,"stages":6,
              "blocks":3,"act":"relu","sigma":0.,
-             "return_inds":False}
+             "arch_return_inds":False}
     return extract_pairs(pairs,_cfg,optional)
 
 # -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-

@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from einops import rearrange
 
 # -- import --
-from dagl.utils.timer import ExpTimer
+from dagl.utils.timer import ExpTimer,AggTimer
 from dagl.utils.misc import assert_nonan
 from .patching import same_padding,extract_image_patches
 
@@ -15,6 +15,8 @@ from dagl.utils import clean_code
 from . import fc_fxns
 from . import attn_fxns
 from . import inds_buffer
+from . import timer_fxn
+
 
 # -- profiling --
 import torch.autograd.profiler as profiler
@@ -27,6 +29,7 @@ Graph model
 @clean_code.add_methods_from(fc_fxns)
 @clean_code.add_methods_from(attn_fxns)
 @clean_code.add_methods_from(inds_buffer)
+@clean_code.add_methods_from(timer_fxn)
 class CE(nn.Module):
     def __init__(self, in_channels=64, inter_channels=16,
                  use_multiple_size=False,add_SE=False,
@@ -34,7 +37,8 @@ class CE(nn.Module):
                  attn_mode="dnls_k",k_s=100,k_a=100,ps=7,pt=1,
                  ws=27,ws_r=3,wt=0,stride0=4,stride1=1,dilation=1,bs=-1,
                  rbwd=True,nbwd=1,exact=False,reflect_bounds=False,
-                 refine_inds=False,return_inds=False,use_pfc=False):
+                 refine_inds=False,return_inds=False,use_pfc=False,
+                 use_wpsum_patches=False):
         # print(shape,in_channels,inter_channels,ps)
         # ksize=7, stride_1=4, stride_2=1,
         #          softmax_scale=10, shape=64 ,p_len=64,in_channels=64,
@@ -50,7 +54,7 @@ class CE(nn.Module):
         self.bs = bs
         self.k_s = k_s
         self.k_a = k_a
-        print("use_pfc: ",use_pfc)
+        self.use_wpsum_patches = use_wpsum_patches
 
         self.shape=shape
         self.p_len=p_len
@@ -98,6 +102,13 @@ class CE(nn.Module):
                                   kernel_size=ps,stride=stride0,padding=0)
         self.bias_conv = nn.Conv2d(in_channels=in_channels,out_channels=1,
                                    kernel_size=ps,stride=stride0,padding=0)
+
+        self.search_kwargs = {"attn_mode":attn_mode,"k":k_s,"ps":ps,
+                              "pt":pt,"ws":ws,"ws_r":ws_r,"wt":wt,
+                              "stride0":stride0,"stride1":stride1,
+                              "dilation":dilation,"rbwd":rbwd,"nbwd":nbwd,
+                              "exact":exact,"reflect_bounds":reflect_bounds,
+                              "refine_inds":refine_inds}
         self.search = self.init_search(attn_mode=attn_mode,k=k_s,ps=ps,pt=pt,
                                        ws=ws,ws_r=ws_r,wt=wt,
                                        stride0=stride0,stride1=stride1,
@@ -105,12 +116,13 @@ class CE(nn.Module):
                                        exact=exact,reflect_bounds=reflect_bounds,
                                        refine_inds=refine_inds)
         self.wpsum = self.init_wpsum(ps=ps,pt=pt,dilation=dilation,
-                                     reflect_bounds=reflect_bounds,exact=exact)
-
+                                     reflect_bounds=reflect_bounds,exact=exact,
+                                     use_wpsum_patches=use_wpsum_patches)
         c_in = inter_channels
         c_out = inter_channels//4
         self.pfc0 = self.init_pfc(c_in,c_out,ps,stride0)
         self.pfc1 = self.init_pfc(c_in,c_out,ps,stride1)
+        self.times = AggTimer()
 
     def extract_features(self,vid):
 
@@ -120,19 +132,18 @@ class CE(nn.Module):
         vid2 = self.theta(vid)
         vid3 = vid1
         # vid = vid[None,:]
-        vid4, _ = same_padding(vid,[self.ps,self.ps],
-                             [self.stride0,self.stride0],[1,1])
 
         # -- apply the graph convolution to patches --
         # vid3 = self.fc1(vid3.view(wi.shape[1],-1))
         # vid1 = self.fc2(vid1.view(xi.shape[1],-1)).permute(1,0)
-        vid1,vid3 = self.extract_fc(vid1,vid3)
 
         # -- thresholding --
-        soft_thr = self.thr_conv(vid4)#.view(B,-1)
-        soft_bias = self.bias_conv(vid4)#.view(B,-1)
+        # vid4, _ = same_padding(vid,[self.ps,self.ps],
+        #                      [self.stride0,self.stride0],[1,1])
+        # soft_thr = self.thr_conv(vid4)#.view(B,-1)
+        # soft_bias = self.bias_conv(vid4)#.view(B,-1)
 
-        return vid1,vid2,vid3,vid4,soft_thr,soft_bias
+        return vid1,vid2,vid3#,vid4,soft_thr,soft_bias
 
     def forward(self, vid, flows=None, inds_pred=None):
 
@@ -140,20 +151,27 @@ class CE(nn.Module):
         # print(dir(self.fc1))
         # print(dir(dict(self.fc1.named_modules())['0']))
         # print(dict(self.fc1.named_modules())['0'].parameters())
-        self.pfc0.set_from_fc(dict(self.fc1.named_modules())['0'])
-        self.pfc1.set_from_fc(dict(self.fc2.named_modules())['0'])
+        # self.pfc0.set_from_fc(dict(self.fc1.named_modules())['0'])
+        # self.pfc1.set_from_fc(dict(self.fc2.named_modules())['0'])
 
         # -- init buffs --
         self.clear_inds_buffer()
+        self.update_search(inds_pred is None)
 
         # -- init timer --
         use_timer = True
         timer = ExpTimer(use_timer)
 
         # -- get features --
-        with TimeIt(timer,"extract"):
+        with TimeIt(timer,"extract_ftrs"):
             ftrs = self.extract_features(vid)
-            vid1,vid2,vid3,vid4,soft_thr,soft_bias = ftrs
+            vid1,vid2,vid3 = ftrs
+            vid4, _ = same_padding(vid,[self.ps,self.ps],
+                                 [self.stride0,self.stride0],[1,1])
+            soft_thr = self.thr_conv(vid4)#.view(B,-1)
+            soft_bias = self.bias_conv(vid4)#.view(B,-1)
+            vid1,vid3 = self.extract_fc(vid1,vid3)
+
 
         # -- add batch dim --
         vid1 = vid1[None,:]
@@ -199,6 +217,14 @@ class CE(nn.Module):
             inds_agg = inds[...,:self.k_a,:].contiguous()
             dists_agg = dists[...,:self.k_a].contiguous()
 
+            # -- adaptive "k" --
+            # mask = F.relu(yi-yi.mean(dim=1,keepdim=True)*thr.unsqueeze(1)+bias.unsqueeze(1))
+            # mask_b = (mask!=0.).float()
+
+            # yi = yi * mask
+            # yi = F.softmax(yi * self.softmax_scale, dim=1)
+            # yi = yi * mask_b
+
             # -- softmax --
             yi = F.softmax(dists_agg*self.softmax_scale,2)
             assert_nonan(yi)
@@ -224,7 +250,7 @@ class CE(nn.Module):
         y,Z = ifold.vid,ifold.zvid
         y = y / Z
         assert_nonan(y)
-        print(timer)
+        # print(timer)
 
         # -- remove batching --
         vid,y = vid[0],y[0]
@@ -239,6 +265,11 @@ class CE(nn.Module):
         inds = self.get_inds_buffer()
         # print("[final] inds.shape: ",inds.shape)
         self.clear_inds_buffer()
+
+        # -- timer --
+        if timer.use_timer:
+            # print(timer)
+            self.update_timer(timer)
 
         return y,inds
 
