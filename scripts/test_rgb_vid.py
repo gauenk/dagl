@@ -178,6 +178,7 @@ def load_trained_state(model,use_train,ca_fwd,sigma,ws,wt):
         raise ValueError("Missing sigma level")
 
     # -- load model state --
+    print("Loading trained network: ",model_path)
     state = th.load(model_path)['state_dict']
     lightning.remove_lightning_load_state(state)
     if hasattr(model,"model"):

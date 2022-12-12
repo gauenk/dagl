@@ -218,7 +218,8 @@ class CE(nn.Module):
             dists_agg = dists[...,:self.k_a].contiguous()
 
             # -- adaptive "k" --
-            # mask = F.relu(yi-yi.mean(dim=1,keepdim=True)*thr.unsqueeze(1)+bias.unsqueeze(1))
+            # mask = F.relu(yi-yi.mean(dim=1,keepdim=True)*\
+            # thr.unsqueeze(1)+bias.unsqueeze(1))
             # mask_b = (mask!=0.).float()
 
             # yi = yi * mask
