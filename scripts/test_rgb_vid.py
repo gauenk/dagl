@@ -162,6 +162,7 @@ def run_exp(_cfg):
             if not(name in results):
                 results[name] = []
             results[name].append(time)
+        print(model.times)
 
     th.cuda.empty_cache()
     return results
@@ -216,8 +217,7 @@ def main():
     cfg.frame_start = 0
     cfg.frame_end = cfg.frame_start+cfg.nframes-1
     cfg.attn_mode = "dnls_k"
-    cfg.burn_in = True
-
+    cfg.burn_in = False
 
     # -- processing --
     cfg.spatial_crop_size = "none"
@@ -272,6 +272,7 @@ def main():
     ca_fwd_list,use_train = ["dnls_k"],["true"]
     # refine_inds = [("t-"*12)[:-1],("f-"*12)[:-1],("f-"+"t-"*11)[:-1]]
     refine_inds = [("t-"*12)[:-1],("f-"*12)[:-1],#("f-"+"t-"*11)[:-1],
+                   ("f-f-f-t-"*3)[:-1],
                    ("f-t-t-t-"*3)[:-1]]
     # refine_inds = [("f-"*12)[:-1],("f-t-t-t-"*3)[:-1],
     #                ("f-"+"t-"*11)[:-1],("f-t-t-t-t-t-"*2)[:-1]]
@@ -283,7 +284,8 @@ def main():
     aug_test = ["true","false"]
     aug_refine_inds = ["true"]
     model_type = ['augmented']
-    ws_r = [1,3]
+    ws_r = [1]
+    # ws_r = [1,3]
     exp_lists = {"dname":dnames,"vid_name":vid_names,"sigma":sigmas,
                  "flow":flow,"use_train":use_train,
                  "ca_fwd":ca_fwd_list,"use_chop":["false"],"model_type":model_type,

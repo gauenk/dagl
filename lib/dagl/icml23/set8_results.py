@@ -33,28 +33,32 @@ def detailed_cfg(cfg):
 
     # -- data config --
     # cfg.isize = "128_128"
-    cfg.isize = "512_512"
+    # cfg.isize = "512_512"
+    # cfg.nframes = 3
+    # cfg.frame_start = 0
+    # cfg.frame_end = cfg.frame_start+cfg.nframes-1
     cfg.bw = True
-    cfg.nframes = 3
-    cfg.frame_start = 0
-    cfg.frame_end = cfg.frame_start+cfg.nframes-1
     cfg.return_inds = True
     cfg.ca_fwd = 'dnls_k'
+    cfg.use_pfc = False
+
+    # -- archs --
+    cfg.arch_return_inds = True
+    cfg.burn_in = True
 
     # -- processing --
-    cfg.spatial_crop_size = 512
+    cfg.spatial_crop_size = "none"
     cfg.spatial_crop_overlap = 0.#0.1
-    cfg.temporal_crop_size = 3#cfg.nframes
+    cfg.temporal_crop_size = 7#cfg.nframes
     cfg.temporal_crop_overlap = 0/5.#4/5. # 3 of 5 frames
     cfg.attn_mode = "dnls_k"
     cfg.use_chop = "false"
 
     # -- get config --
-    cfg.k_s = 75
-    cfg.k_a = 25
+    cfg.k_s = 100
+    cfg.k_a = 100
     cfg.ws = 27
     cfg.wt = 3
-    cfg.ws_r = 1
     # cfg.bs = 48*1024
     # return cfg
 
@@ -71,23 +75,10 @@ def merge_with_base(cfg):
         cfg[key] = cfg_og[key]
 
     # -- remove extra keys --
-    del cfg['isize']
+    # del cfg['isize']
     return cfg
 
-# def load_proposed(cfg,use_train="true",flow="true"):
-#     use_chop = "false"
-#     ca_fwd = "dnls_k"
-#     sb = 256
-#     return load_results(ca_fwd,use_train,use_chop,flow,sb,cfg)
-
-# def load_original(cfg,use_chop="false"):
-#     flow = "false"
-#     use_train = "false"
-#     ca_fwd = "default"
-#     sb = 1
-#     return load_results(ca_fwd,use_train,use_chop,flow,sb,cfg)
-
-def load_results(cfg,vid_names):
+def load_results(cfg,dnames,vid_names,sigmas):
 
     # -- get cache --
     home = Path(__file__).parents[0] / "../../../"
@@ -98,25 +89,31 @@ def load_results(cfg,vid_names):
     # -- update with default --
     cfg = merge_with_base(cfg)
     detailed_cfg(cfg)
-    flow,isizes = ["true"],["none"]
     use_train = ["true"]
-    refine_inds = [("f-"*12)[:-1],("f-t-t-t-"*3)[:-1],
-                   ("f-"+"t-"*11)[:-1],("f-t-t-t-t-t-"*2)[:-1]]
+    flow = ["true"]
     model_type = ['augmented']
-    exp_lists = {"refine_inds":refine_inds,"use_train":use_train,
-                 "use_chop":["false"],
-                 "model_type":model_type,"vid_name":vid_names}
+    aug_test = ["true","false"]
+    aug_refine_inds = ["true"]
+    model_type = ['augmented']
+    ws_r = [1,3]
+    refine_inds = [("f-"*12)[:-1],("f-t-t-t-"*3)[:-1],
+                   ("f-"+"t-"*11)[:-1],("f-t-t-t-t-t-"*2)[:-1],('t-'*12)[:-1]]
+    exp_lists = {"dname":dnames,"vid_name":vid_names,"sigma":sigmas,
+                 "flow":flow,"use_train":use_train,"ws_r":ws_r,
+                 "model_type":model_type,"refine_inds":refine_inds,
+                 "aug_refine_inds":aug_refine_inds,"aug_test":aug_test}
     exps = cache_io.mesh_pydicts(exp_lists) # create mesh
     cache_io.append_configs(exps,cfg)
-    pp.pprint(exps[0])
+    pp.pprint(exps[-1])
 
     # -- read --
-    root = Path("./.cvpr23")
+    root = Path("./.icml23")
     if not root.exists():
         root.mkdir()
     pickle_store = str(root / "dagl_set8_results.pkl")
-    records = cache.load_flat_records(exps,save_agg=pickle_store,clear=True)
+    records = cache.load_flat_records(exps,save_agg=pickle_store,clear=False)
 
     # -- standardize col names --
-    records = records.rename(columns={"sb":"batch_size"})
+    # records = records.rename(columns={"sb":"batch_size"})
+
     return records

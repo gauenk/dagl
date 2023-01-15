@@ -268,7 +268,7 @@ class CE(nn.Module):
 
         # -- timer --
         if timer.use_timer:
-            # print(timer)
+            print(timer)
             self.update_timer(timer)
 
         return y,inds

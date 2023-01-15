@@ -14,7 +14,7 @@ class ExpTimer():
     def __str__(self):
         msg = "--- Exp Times ---"
         for k,v in self.items():
-            msg += "\n%s: %2.3f\n" % (k,v)
+            msg += "\n%s: %2.6f\n" % (k,v)
         return msg
 
     def __getitem__(self,name):
