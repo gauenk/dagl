@@ -26,7 +26,6 @@ def load_model(cfg):
     # -- unpack configs --
     arch_cfg = extract_arch_config(cfg,optional)
     search_cfg = extract_search_config(cfg,optional)
-    print(search_cfg)
     io_cfg = extract_io_config(cfg,optional)
     mtype = optional(cfg,'model_type','augmented') # for base
     device = optional(cfg,'device','cuda:0')
